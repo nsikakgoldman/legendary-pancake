@@ -1,13 +1,30 @@
-#include <gtkmm.h>
-#include <X11/Xlib.h>
-#include <X11/X.h>
-#include <xcb/xcb.h>
-#include <xcb/xproto.h>
+#ifndef WORK_TRACKER_APP_H
+#define WORK_TRACKER_APP_H
+
 #include <iostream>
+#include <fstream>
+#include <stdio.h>
+#include <stdlib.h>
 #include <chrono>
 #include <thread>
 #include <sstream>
 #include <iomanip>
+#include <gtkmm.h>
+#include <X11/Xlib.h>
+#include <gdk/gdkx.h>
+#include <gdkmm/window.h>
+#include <gdkmm/pixbuf.h>
+#include <gdkmm/general.h>
+#include <X11/Xutil.h>
+#include <X11/X.h>
+#include <xcb/xcb.h>
+#include <xcb/xcb_image.h>
+#include <xcb/xproto.h>
+#include <cairo/cairo.h>
+
+
+
+
 
 class WorkTrackerApp : public Gtk::Window {
 public:
@@ -112,7 +129,7 @@ public:
                 on_pause_clicked();
             }
             // Set isTaskActive to false regardless of whether the task is paused or not
-            isTaskActive = false;
+            //isTaskActive = false;
         } else {
             // The user is active, so resume the task if it was paused
             if (isTaskActive && isTaskPaused) {
@@ -132,32 +149,46 @@ public:
 
 
     void takeScreenshot() {
-        std::ostringstream filename;
-        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        filename << "screenshot_" << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S") << ".png";
-
-        xcb_connection_t* connection = xcb_connect(nullptr, nullptr);
-
-        if (connection) {
-            xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
-            xcb_pixmap_t pixmap = xcb_generate_id(connection);
-            xcb_gcontext_t gc = xcb_generate_id(connection);
-
-            xcb_create_pixmap(connection, screen->root_depth, pixmap, screen->root, screen->width_in_pixels,
-                              screen->height_in_pixels);
-
-            xcb_create_gc(connection, gc, pixmap, 0, nullptr);
-
-            xcb_copy_area(connection, screen->root, pixmap, gc, 0, 0, 0, 0, screen->width_in_pixels,
-                          screen->height_in_pixels);
-
-            xcb_flush(connection);
-
-            std::cout << "Screenshot saved: " << filename.str() << std::endl;
-        } else {
-            std::cerr << "Failed to connect to X server for taking a screenshot." << std::endl;
+        Display *display = XOpenDisplay(NULL);
+        if (display == NULL) {
+            std::cerr << "cannot open display" << std::endl;
+            exit(1);
         }
+
+        Window root = DefaultRootWindow(display);
+
+        // Get screen dimensions
+        int screen = DefaultScreen(display);
+        int width = DisplayWidth(display, screen);
+        int height = DisplayHeight(display, screen);
+
+        // Create an XImage structure to hold pixel data
+        XImage *image = XGetImage(display, root, 0, 0, width, height, AllPlanes, ZPixmap);
+        if (image == NULL) {
+            std::cerr << "Error capturing screen" << std::endl;
+            exit(1);
+        }
+
+        std::ofstream outfile("screenshot.ppm", std::ios::binary);
+        if (!outfile.is_open()) {
+            std::cerr << "Error opening output file" << std::endl;
+            exit(1);
+        }
+
+        outfile << "P6\n" << width << " " << height << "\n255\n";
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                unsigned long pixel = XGetPixel(image, x, y);
+                outfile << static_cast<unsigned char>(pixel >> 16) << static_cast<unsigned char>(pixel >> 8) << static_cast<unsigned char>(pixel);
+            }
+        }
+
+        outfile.close();
+
+        XDestroyImage(image);
+        XCloseDisplay(display);
     }
+
 
 private:
     Gtk::Button startBtn;
@@ -244,3 +275,6 @@ int main(int argc, char** argv) {
 
     return app->run(workTrackerApp);
 }
+
+
+#endif // WORK_TRACKER_APP_H
