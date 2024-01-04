@@ -2,6 +2,7 @@
 #define WORK_TRACKER_APP_H
 
 #include <iostream>
+#include "INIReader.h"
 #include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,7 +29,15 @@
 
 class WorkTrackerApp : public Gtk::Window {
 public:
-    WorkTrackerApp() {
+    INIReader reader;
+
+    WorkTrackerApp(const std::string& configFile) : reader(configFile) {
+        // Constructor: Read and parse the INI file
+        if (reader.ParseError() < 0) {
+            std::cerr << "Error parsing INI file." << std::endl;
+            // Handle the error or throw an exception if needed
+        }
+        
         set_title("Work Tracker");
         set_default_size(300, 200);
 
@@ -149,46 +158,16 @@ public:
 
 
     void takeScreenshot() {
-        Display *display = XOpenDisplay(NULL);
-        if (display == NULL) {
-            std::cerr << "cannot open display" << std::endl;
-            exit(1);
-        }
-
-        Window root = DefaultRootWindow(display);
-
-        // Get screen dimensions
-        int screen = DefaultScreen(display);
-        int width = DisplayWidth(display, screen);
-        int height = DisplayHeight(display, screen);
-
-        // Create an XImage structure to hold pixel data
-        XImage *image = XGetImage(display, root, 0, 0, width, height, AllPlanes, ZPixmap);
-        if (image == NULL) {
-            std::cerr << "Error capturing screen" << std::endl;
-            exit(1);
-        }
-
-        std::ofstream outfile("screenshot.ppm", std::ios::binary);
-        if (!outfile.is_open()) {
-            std::cerr << "Error opening output file" << std::endl;
-            exit(1);
-        }
-
-        outfile << "P6\n" << width << " " << height << "\n255\n";
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                unsigned long pixel = XGetPixel(image, x, y);
-                outfile << static_cast<unsigned char>(pixel >> 16) << static_cast<unsigned char>(pixel >> 8) << static_cast<unsigned char>(pixel);
-            }
-        }
-
-        outfile.close();
-
-        XDestroyImage(image);
-        XCloseDisplay(display);
+        //Todo build the screen shot feature.
+    }
+public:
+    int millisecondsToMinutes(int duration){
+        return duration * 60000;
     }
 
+    int minutesToSeconds(int minutes){
+        return minutes * 60;
+    }
 
 private:
     Gtk::Button startBtn;
@@ -197,8 +176,8 @@ private:
     std::chrono::steady_clock::time_point startTime;
     std::chrono::steady_clock::time_point lastActivityTime;
     Display* display = nullptr;
-    const int IDLE_THRESHOLD_SECONDS = (60 * 10); // Adjust this threshold as needed
-    const int WAIT_DURATION_MINUTES = (4 * 60);
+    // const int IDLE_THRESHOLD_SECONDS = (60 * 10); // Adjust this threshold as needed
+    int WAIT_DURATION_MINUTES = minutesToSeconds(reader.GetInteger("Time", "WaitDurationMinutes", 4));
     bool isTaskPaused = false;
     
     
@@ -266,12 +245,12 @@ private:
 int main(int argc, char** argv) {
     auto app = Gtk::Application::create(argc, argv, "org.gtkmm.examples.base");
 
-    WorkTrackerApp workTrackerApp;
+    WorkTrackerApp workTrackerApp("./config.ini");
 
     // Set up a timeout function to check for user inactivity
-    Glib::signal_timeout().connect(sigc::mem_fun(workTrackerApp, &WorkTrackerApp::on_timeout), 240000);
+    int checkInterval = workTrackerApp.reader.GetInteger("Time", "CheckInterval", 4);
+    Glib::signal_timeout().connect(sigc::mem_fun(workTrackerApp, &WorkTrackerApp::on_timeout), workTrackerApp.millisecondsToMinutes(checkInterval));
 
-    
 
     return app->run(workTrackerApp);
 }
